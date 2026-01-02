@@ -68,7 +68,7 @@ The complexity of Pulse lies in the **Spatio-Temporal Surge Algorithm**.
 
 1. **Hexagonal Aggregation:** Every coordinate (Lat/Lng) is mapped to an **H3 Hexagon**.
 2. **Sliding Window Demand:** `pulse-gateway` records every quote request in a Redis Sorted Set. `pulse-engine` calculates the density of requests in that hexagon over the last 60 seconds.
-3. **The Multiplier:**
+3. **The Multiplier:** Price = (BaseFare + (Distance *Rate))* SurgeMultiplier + ToolFees where, SurgeMultiplier: 1.0 + min(2.5, (Demand / (Supply * Elasticity)))
 
 4. **Transactional Outbox:** When an order is created, we use a Postgres transaction to save the `order` and the `outbox_event`. A separate process ensures the event is pushed to Kafka, preventing data loss.
 

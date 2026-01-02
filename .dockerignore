@@ -1,0 +1,12 @@
+.git
+.gitignore
+README.md
+plan.md
+spec.md
+tmp
+*.log
+*.swp
+*.swo
+.env
+.DS_Store
+deployments/grafana

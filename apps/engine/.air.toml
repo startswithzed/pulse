@@ -1,0 +1,14 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/engine ./apps/engine/main.go"
+  entrypoint = "./tmp/engine"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor", "deployments", ".git"]
+  delay = 1000
+  stop_on_error = true
+  rerun = true
+
+[log]
+  time = true
