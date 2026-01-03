@@ -1,0 +1,79 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+  resource:
+    attributes:
+      - action: upsert
+        key: service
+        from_attribute: service.name
+      - action: insert
+        key: loki.resource.labels
+        value: "service.name,service.namespace,deployment.environment,service"
+  transform:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["event"], body)
+          - set(attributes["trace_id"], Hex(trace_id))
+          - set(attributes["span_id"], Hex(span_id))
+          - set(attributes["level"], severity_text)
+          # Parity with Python: Rename Code Attributes
+          - set(attributes["code_file_path"], attributes["code.filepath"])
+          - set(attributes["code_function_name"], attributes["code.function"])
+          - set(attributes["code_line_number"], attributes["code.lineno"])
+          - set(attributes["code.filepath"], nil)
+          - set(attributes["code.function"], nil)
+          - set(attributes["code.lineno"], nil)
+          # Parity with Python: Rename IP
+          - set(attributes["ip"], attributes["client_ip"])
+          - set(attributes["client_ip"], nil)
+          
+          - set(body, attributes)
+          - set(attributes, {})
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  prometheusremotewrite/mimir:
+    endpoint: http://mimir:9009/api/v1/push
+
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+  debug:
+    verbosity: detailed
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo, debug]
+
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheusremotewrite/mimir, debug]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch, resource, transform]
+      exporters: [otlphttp/loki, debug]
+
+  telemetry:
+    logs:
+      level: info

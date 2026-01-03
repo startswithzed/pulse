@@ -1,0 +1,38 @@
+target: all
+
+multitenancy_enabled: false
+
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/blocks
+  bucket_store:
+    sync_dir: /data/tsdb-sync
+
+memberlist:
+  join_members: [ pulse-mimir ]
+  abort_if_cluster_join_fails: false
+
+ingester:
+  ring:
+    replication_factor: 1
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+compactor:
+  data_dir: /data/compactor
+
+ruler:
+  rule_path: /data/rules
+  alertmanager_url: http://localhost:9093
+
+server:
+  http_listen_port: 9009
+  log_level: info
+
+limits:
+  max_global_series_per_user: 0
+  ingestion_rate: 100000
+  ingestion_burst_size: 200000
