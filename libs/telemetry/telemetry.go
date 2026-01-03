@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -19,160 +20,32 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.30.0"
-	"go.opentelemetry.io/otel/trace"
-
-	otelslog "go.opentelemetry.io/contrib/bridges/otelslog"
 )
-
-type multiHandler struct {
-	handlers []slog.Handler
-	service  string
-}
-
-func (h multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	for _, handler := range h.handlers {
-		if handler.Enabled(ctx, level) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h multiHandler) Handle(ctx context.Context, r slog.Record) error {
-	spanCtx := trace.SpanContextFromContext(ctx)
-	attrs := []slog.Attr{
-		slog.String("service.name", h.service),
-		slog.String("timestamp", r.Time.Format(time.RFC3339Nano)),
-	}
-
-	if spanCtx.HasTraceID() {
-		attrs = append(attrs, slog.String("trace_id", spanCtx.TraceID().String()))
-	}
-	if spanCtx.HasSpanID() {
-		attrs = append(attrs, slog.String("span_id", spanCtx.SpanID().String()))
-	}
-
-	r.AddAttrs(attrs...)
-	r.Time = time.Time{}
-	for _, handler := range h.handlers {
-		if err := handler.Handle(ctx, r); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (h multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	handlers := make([]slog.Handler, len(h.handlers))
-	for i, handler := range h.handlers {
-		handlers[i] = handler.WithAttrs(attrs)
-	}
-	return multiHandler{handlers: handlers, service: h.service}
-}
-
-func (h multiHandler) WithGroup(group string) slog.Handler {
-	handlers := make([]slog.Handler, len(h.handlers))
-	for i, handler := range h.handlers {
-		handlers[i] = handler.WithGroup(group)
-	}
-	return multiHandler{handlers: handlers, service: h.service}
-}
 
 func InitSDK(ctx context.Context, serviceName, serviceVersion, otelEndpoint, environment string, logJSON bool) (func(context.Context) error, error) {
 	if environment == "" {
 		environment = "development"
 	}
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(serviceVersion),
-			semconv.ServiceInstanceID(uuid.New().String()),
-			attribute.String("deployment.environment.name", environment),
-		),
-	)
+	res, err := newResource(ctx, serviceName, serviceVersion, environment)
 	if err != nil {
 		return nil, err
 	}
 
-	traceExporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(otelEndpoint),
-		otlptracegrpc.WithInsecure(),
-		otlptracegrpc.WithTimeout(30*time.Second),
-	)
+	tracerProvider, err := initTracing(ctx, res, otelEndpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(traceExporter),
-		sdktrace.WithResource(res),
-	)
-
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
-
-	otel.SetTracerProvider(tracerProvider)
-
-	metricExporter, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithEndpoint(otelEndpoint),
-		otlpmetricgrpc.WithInsecure(),
-		otlpmetricgrpc.WithTimeout(30*time.Second),
-	)
+	meterProvider, err := initMetrics(ctx, res, otelEndpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(
-			metricExporter,
-			metric.WithInterval(3*time.Second),
-		)),
-		metric.WithResource(res),
-	)
-
-	otel.SetMeterProvider(meterProvider)
-
-	logExporter, err := otlploggrpc.New(ctx,
-		otlploggrpc.WithEndpoint(otelEndpoint),
-		otlploggrpc.WithInsecure(),
-		otlploggrpc.WithTimeout(30*time.Second),
-	)
+	loggerProvider, err := initLogging(ctx, res, otelEndpoint, serviceName, logJSON)
 	if err != nil {
 		return nil, err
 	}
-
-	loggerProvider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
-		sdklog.WithResource(res),
-	)
-
-	global.SetLoggerProvider(loggerProvider)
-
-	otelslogHandler := otelslog.NewHandler(
-		serviceName,
-		otelslog.WithLoggerProvider(loggerProvider),
-		otelslog.WithSource(true),
-	)
-
-	var consoleHandler slog.Handler
-	if logJSON {
-		consoleHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
-		})
-	} else {
-		consoleHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
-		})
-	}
-
-	logger := slog.New(multiHandler{
-		handlers: []slog.Handler{consoleHandler, otelslogHandler},
-		service:  serviceName,
-	})
-	slog.SetDefault(logger)
 
 	shutdown := func(ctx context.Context) error {
 		var errs []error
@@ -196,4 +69,116 @@ func InitSDK(ctx context.Context, serviceName, serviceVersion, otelEndpoint, env
 	}
 
 	return shutdown, nil
+}
+
+func newResource(ctx context.Context, serviceName, serviceVersion, environment string) (*resource.Resource, error) {
+	return resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion(serviceVersion),
+			semconv.ServiceInstanceID(uuid.New().String()),
+			attribute.String("deployment.environment.name", environment),
+		),
+	)
+}
+
+func initTracing(ctx context.Context, res *resource.Resource, otelEndpoint string) (*sdktrace.TracerProvider, error) {
+	exporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithEndpoint(otelEndpoint),
+		otlptracegrpc.WithInsecure(),
+		otlptracegrpc.WithTimeout(30*time.Second),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	otel.SetTracerProvider(provider)
+
+	return provider, nil
+}
+
+func initMetrics(ctx context.Context, res *resource.Resource, otelEndpoint string) (*metric.MeterProvider, error) {
+	exporter, err := otlpmetricgrpc.New(ctx,
+		otlpmetricgrpc.WithEndpoint(otelEndpoint),
+		otlpmetricgrpc.WithInsecure(),
+		otlpmetricgrpc.WithTimeout(30*time.Second),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(
+			exporter,
+			metric.WithInterval(3*time.Second),
+		)),
+		metric.WithResource(res),
+	)
+
+	otel.SetMeterProvider(provider)
+
+	return provider, nil
+}
+
+func initLogging(ctx context.Context, res *resource.Resource, otelEndpoint, serviceName string, logJSON bool) (*sdklog.LoggerProvider, error) {
+	exporter, err := otlploggrpc.New(ctx,
+		otlploggrpc.WithEndpoint(otelEndpoint),
+		otlploggrpc.WithInsecure(),
+		otlploggrpc.WithTimeout(30*time.Second),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+		sdklog.WithResource(res),
+	)
+
+	global.SetLoggerProvider(provider)
+
+	setupSlogHandlers(serviceName, provider, logJSON)
+
+	return provider, nil
+}
+
+func setupSlogHandlers(serviceName string, provider *sdklog.LoggerProvider, logJSON bool) {
+	var consoleHandler slog.Handler
+	if logJSON {
+		consoleHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	} else {
+		consoleHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	}
+
+	baseOtelHandler := otelslog.NewHandler(
+		serviceName,
+		otelslog.WithLoggerProvider(provider),
+		otelslog.WithSource(true),
+	)
+
+	otelHandler := jsonBodyHandler{
+		handler: baseOtelHandler,
+		service: serviceName,
+	}
+
+	logger := slog.New(multiHandler{
+		handlers: []slog.Handler{consoleHandler, otelHandler},
+		service:  serviceName,
+	})
+
+	slog.SetDefault(logger)
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/startswithzed/pulse/libs/shared/config"
 	"github.com/startswithzed/pulse/libs/telemetry"
@@ -25,7 +26,6 @@ func main() {
 		slog.Error("telemetry_init_failed", "error", err)
 		os.Exit(1)
 	}
-	defer shutdown(ctx)
 
 	slog.Info("service_started", "service", "engine")
 
@@ -34,4 +34,11 @@ func main() {
 	<-quit
 
 	slog.Info("service_shutting_down", "service", "engine")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := shutdown(shutdownCtx); err != nil {
+		slog.Error("telemetry_shutdown_failed", "error", err)
+	}
 }

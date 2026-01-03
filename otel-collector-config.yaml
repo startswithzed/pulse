@@ -8,6 +8,7 @@ receivers:
 
 processors:
   batch:
+  
   resource:
     attributes:
       - action: insert
@@ -28,26 +29,19 @@ exporters:
     tls:
       insecure: true
 
-  debug:
-    verbosity: detailed
-
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/tempo, debug]
+      exporters: [otlp/tempo]
 
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [prometheusremotewrite/mimir, debug]
+      exporters: [prometheusremotewrite/mimir]
 
     logs:
       receivers: [otlp]
       processors: [batch, resource]
-      exporters: [otlphttp/loki, debug]
-
-  telemetry:
-    logs:
-      level: info
+      exporters: [otlphttp/loki]

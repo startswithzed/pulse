@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/startswithzed/pulse/libs/shared/config"
@@ -28,7 +29,6 @@ func main() {
 		slog.Error("telemetry_init_failed", "error", err)
 		os.Exit(1)
 	}
-	defer shutdown(ctx)
 
 	router := gin.Default()
 	router.Use(otelgin.Middleware("gateway"))
@@ -41,10 +41,15 @@ func main() {
 		})
 	})
 
+	srv := &http.Server{
+		Addr:    ":" + cfg.Service.Port,
+		Handler: router.Handler(),
+	}
+
 	slog.Info("service_started", "service", "gateway", "port", cfg.Service.Port)
 
 	go func() {
-		if err := router.Run(":" + cfg.Service.Port); err != nil {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server_start_failed", "error", err)
 		}
 	}()
@@ -54,4 +59,15 @@ func main() {
 	<-quit
 
 	slog.Info("service_shutting_down", "service", "gateway")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server_shutdown_failed", "error", err)
+	}
+
+	if err := shutdown(shutdownCtx); err != nil {
+		slog.Error("telemetry_shutdown_failed", "error", err)
+	}
 }
