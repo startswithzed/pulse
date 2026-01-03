@@ -59,6 +59,10 @@ services:
       dockerfile: Dockerfile.dev
     container_name: pulse-gateway
     working_dir: /app
+    env_file:
+      - .env
+    environment:
+      KAFKA_GROUP_ID: pulse-gateway-group
     volumes:
       - .:/app
     command: air -c apps/gateway/.air.toml
@@ -78,6 +82,10 @@ services:
       dockerfile: Dockerfile.dev
     container_name: pulse-engine
     working_dir: /app
+    env_file:
+      - .env
+    environment:
+      KAFKA_GROUP_ID: pulse-engine-group
     volumes:
       - .:/app
     command: air -c apps/engine/.air.toml
