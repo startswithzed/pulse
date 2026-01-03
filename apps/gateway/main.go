@@ -15,6 +15,15 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
+func handleRoot(c *gin.Context) {
+	slog.InfoContext(c.Request.Context(), "root_endpoint_requested")
+	c.JSON(http.StatusOK, gin.H{
+		"service": "gateway",
+		"version": "1.0.0",
+		"status":  "running",
+	})
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -33,13 +42,7 @@ func main() {
 	router := gin.Default()
 	router.Use(otelgin.Middleware("gateway"))
 
-	router.GET("/", func(c *gin.Context) {
-		slog.InfoContext(c.Request.Context(), "request_processed")
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Hello World",
-			"status":  "ok",
-		})
-	})
+	router.GET("/", handleRoot)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Service.Port,

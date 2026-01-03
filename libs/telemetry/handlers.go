@@ -26,7 +26,6 @@ func (h multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h multiHandler) Handle(ctx context.Context, r slog.Record) error {
 	attrs := h.buildTraceAttributes(ctx, r.Time)
 	r.AddAttrs(attrs...)
-	r.Time = time.Time{}
 
 	for _, handler := range h.handlers {
 		if err := handler.Handle(ctx, r); err != nil {
@@ -92,7 +91,6 @@ func (h jsonBodyHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	attrs := h.buildStructuredMetadata(spanCtx, r.Time)
 	newRecord.AddAttrs(attrs...)
-	newRecord.Time = time.Time{}
 
 	return h.handler.Handle(ctx, newRecord)
 }
