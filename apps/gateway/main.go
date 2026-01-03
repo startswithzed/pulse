@@ -34,7 +34,7 @@ func main() {
 	router.Use(otelgin.Middleware("gateway"))
 
 	router.GET("/", func(c *gin.Context) {
-		slog.InfoContext(c.Request.Context(), "http_request", "method", c.Request.Method, "path", c.Request.URL.Path, "client_ip", c.ClientIP())
+		slog.InfoContext(c.Request.Context(), "request_processed")
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Hello World",
 			"status":  "ok",

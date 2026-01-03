@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.30.0"
+	"go.opentelemetry.io/otel/trace"
 
 	otelslog "go.opentelemetry.io/contrib/bridges/otelslog"
 )
@@ -38,7 +39,21 @@ func (h multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h multiHandler) Handle(ctx context.Context, r slog.Record) error {
-	r.AddAttrs(slog.String("service", h.service))
+	spanCtx := trace.SpanContextFromContext(ctx)
+	attrs := []slog.Attr{
+		slog.String("service.name", h.service),
+		slog.String("timestamp", r.Time.Format(time.RFC3339Nano)),
+	}
+
+	if spanCtx.HasTraceID() {
+		attrs = append(attrs, slog.String("trace_id", spanCtx.TraceID().String()))
+	}
+	if spanCtx.HasSpanID() {
+		attrs = append(attrs, slog.String("span_id", spanCtx.SpanID().String()))
+	}
+
+	r.AddAttrs(attrs...)
+	r.Time = time.Time{}
 	for _, handler := range h.handlers {
 		if err := handler.Handle(ctx, r); err != nil {
 			return err
@@ -73,7 +88,7 @@ func InitSDK(ctx context.Context, serviceName, serviceVersion, otelEndpoint, env
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(serviceVersion),
 			semconv.ServiceInstanceID(uuid.New().String()),
-			attribute.String("deployment.environment", environment),
+			attribute.String("deployment.environment.name", environment),
 		),
 	)
 	if err != nil {
