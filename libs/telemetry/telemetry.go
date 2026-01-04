@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -62,10 +63,7 @@ func InitSDK(ctx context.Context, serviceName, serviceVersion, otelEndpoint, env
 			errs = append(errs, err)
 		}
 
-		if len(errs) > 0 {
-			return errs[0]
-		}
-		return nil
+		return errors.Join(errs...)
 	}
 
 	return shutdown, nil

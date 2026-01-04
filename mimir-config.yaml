@@ -26,7 +26,6 @@ compactor:
 
 ruler:
   rule_path: /data/rules
-  alertmanager_url: http://localhost:9093
 
 server:
   http_listen_port: 9009

@@ -45,8 +45,11 @@ func main() {
 	router.GET("/", handleRoot)
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Service.Port,
-		Handler: router.Handler(),
+		Addr:         ":" + cfg.Service.Port,
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	slog.Info("service_started", "service", "gateway", "port", cfg.Service.Port)
