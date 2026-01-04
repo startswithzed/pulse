@@ -1,4 +1,72 @@
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: pulse-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+
+    depends_on:
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+      mimir:
+        condition: service_started
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: pulse-tempo
+    command: ["--config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+      - "9095:9095"
+
+  loki:
+    image: grafana/loki:latest
+    container_name: pulse-loki
+    command: ["-config.file=/etc/loki-config.yaml"]
+    volumes:
+      - ./loki-config.yaml:/etc/loki-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+
+  mimir:
+    image: grafana/mimir:latest
+    container_name: pulse-mimir
+    command: ["-config.file=/etc/mimir.yaml"]
+    volumes:
+      - ./mimir-config.yaml:/etc/mimir.yaml:ro
+      - mimir_data:/data
+    ports:
+      - "9009:9009"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: pulse-grafana
+    environment:
+      GF_INSTALL_PLUGINS: "grafana-lokiexplore-app"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SERVER_ROOT_URL: http://localhost:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+      - loki
+      - mimir
+
   postgres:
     image: postgres:16-alpine
     container_name: pulse-postgres
@@ -75,6 +143,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   pulse-engine:
     build:
@@ -96,6 +166,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
 volumes:
   postgres_data:
+  tempo_data:
+  loki_data:
+  mimir_data:
+  grafana_data:

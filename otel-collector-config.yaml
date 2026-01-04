@@ -1,0 +1,47 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+  
+  resource:
+    attributes:
+      - action: insert
+        key: loki.resource.labels
+        value: "service.name,deployment.environment.name"
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  prometheusremotewrite/mimir:
+    endpoint: http://mimir:9009/api/v1/push
+
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo]
+
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheusremotewrite/mimir]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [otlphttp/loki]

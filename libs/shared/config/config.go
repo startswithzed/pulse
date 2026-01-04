@@ -5,10 +5,11 @@ import (
 )
 
 type AppConfig struct {
-	Postgres PostgresConfig `envPrefix:"DB_"`
-	Redis    RedisConfig    `envPrefix:"REDIS_"`
-	Kafka    KafkaConfig    `envPrefix:"KAFKA_"`
-	Service  ServiceConfig  `envPrefix:"SERVICE_"`
+	Postgres  PostgresConfig  `envPrefix:"DB_"`
+	Redis     RedisConfig     `envPrefix:"REDIS_"`
+	Kafka     KafkaConfig     `envPrefix:"KAFKA_"`
+	Service   ServiceConfig   `envPrefix:"SERVICE_"`
+	Telemetry TelemetryConfig `envPrefix:"OTEL_"`
 }
 
 type PostgresConfig struct {
@@ -32,8 +33,13 @@ type KafkaConfig struct {
 }
 
 type ServiceConfig struct {
-	Port    string `env:"PORT" envDefault:"8080"`
-	LogJSON bool   `env:"LOG_JSON" envDefault:"true"`
+	Port        string `env:"PORT" envDefault:"8080"`
+	LogJSON     bool   `env:"LOG_JSON" envDefault:"true"`
+	Environment string `env:"ENVIRONMENT" envDefault:"development"`
+}
+
+type TelemetryConfig struct {
+	ExporterEndpoint string `env:"EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
 }
 
 func Load() (*AppConfig, error) {
